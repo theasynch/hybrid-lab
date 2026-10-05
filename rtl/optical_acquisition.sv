@@ -163,9 +163,9 @@ module optical_acquisition #(
 
                 // ─── Compute differential ─────────────────────────
                 S_COMPUTE: begin
-                    // Saturating subtraction: if v_on < v_off, clamp to 0
-                    if (v_on >= v_off)
-                        diff_out <= v_on - v_off;
+                    // Saturating subtraction for inverting TIA (more light = lower voltage)
+                    if (v_off >= v_on)
+                        diff_out <= v_off - v_on;
                     else
                         diff_out <= '0;
 

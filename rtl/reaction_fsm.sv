@@ -223,30 +223,32 @@ module reaction_fsm #(
                     timer      <= timer + 1'b1;
                     read_timer <= read_timer + 1'b1;
 
+                    // CRISPR timer done → do a final read then analyze
+                    if (timer >= timer_target) begin
+                        optical_trigger <= 1'b1;
+                        reaction_done   <= 1'b1;
+                        state           <= ST_READ;
+                    end
                     // Periodic optical reads
-                    if (read_timer >= read_target) begin
+                    else if (read_timer >= read_target) begin
                         optical_trigger <= 1'b1;
                         read_timer      <= '0;
                         state           <= ST_READ;
                     end
-
-                    // CRISPR timer done → go to analyze
-                    if (timer >= timer_target) begin
-                        state         <= ST_ANALYZE;
-                        reaction_done <= 1'b1;
-                        // Trigger one final read
-                        optical_trigger <= 1'b1;
-                    end
                 end
 
-                // ─── OPTICAL READ (during CRISPR) ─────────────────
+                // ─── OPTICAL READ (during/after CRISPR) ──────────────
                 ST_READ: begin
                     temp_setpoint <= CRISPR_TEMP_CODE;
                     timer <= timer + 1'b1;
 
                     if (optical_done) begin
                         read_count <= read_count + 1'b1;
-                        state      <= ST_CRISPR;
+                        // If reaction is done, go to ANALYZE
+                        if (reaction_done)
+                            state <= ST_ANALYZE;
+                        else
+                            state <= ST_CRISPR;
                     end
                 end
 

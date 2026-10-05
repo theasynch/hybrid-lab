@@ -132,8 +132,8 @@ class OpticalFrontend:
             Optical power at detector (W).
         """
         # Scale fluorescence to a fraction of maximum detectable power
-        # Assume max fluorescence produces ~10 nW at the detector
-        P_max_detect = 10e-9  # 10 nW — typical for weak fluorescence
+        # Assume max fluorescence produces ~1 uW at the detector
+        P_max_detect = 1e-6  # 1 uW
         return (F / F_max) * P_max_detect
     
     def photodiode_current(self, P_opt: np.ndarray,
@@ -149,9 +149,9 @@ class OpticalFrontend:
         led = self.params.led
         
         if led_on:
-            # Fluorescence signal + excitation filter leakage
+            # Fluorescence signal + excitation filter leakage + ambient
             P_leak = led.power_on * led.excitation_leakage
-            I = pd.R_lambda * (P_opt + P_leak) + pd.I_dark
+            I = pd.R_lambda * (P_opt + P_leak + self.params.ambient_power) + pd.I_dark
         else:
             # Only ambient and dark current
             I = pd.R_lambda * self.params.ambient_power + pd.I_dark
@@ -206,7 +206,7 @@ class OpticalFrontend:
                               ) -> dict:
         """Perform LED-on/LED-off differential measurement (Eq. 8).
         
-        S(t) = V_on(t) − V_off(t)
+        S(t) = V_off(t) − V_on(t)   (Inverting TIA)
         
         This suppresses ambient light and offset drift.
         
@@ -235,8 +235,8 @@ class OpticalFrontend:
         if add_noise:
             V_off = self.add_noise(V_off, rng=rng)
         
-        # Differential signal (Eq. 8)
-        S = V_on - V_off
+        # Differential signal for inverting TIA
+        S = V_off - V_on
         
         return {
             'P_opt': P_opt,

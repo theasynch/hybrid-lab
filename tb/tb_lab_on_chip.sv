@@ -42,8 +42,8 @@ module tb_lab_on_chip;
     localparam PREHEAT_MS       = 30;         // 30 ms (was 30 s)
     localparam LAMP_MS          = 100;        // 100 ms (was 30 min)
     localparam TRANSFER_MS      = 10;         // 10 ms (was 5 s)
-    localparam CRISPR_MS        = 80;         // 80 ms (was 15 min)
-    localparam READ_INTERVAL_MS = 20;         // 20 ms (was 10 s)
+    localparam CRISPR_MS        = 200;        // 200 ms — enough for 25+ optical reads
+    localparam READ_INTERVAL_MS = 5;          // 5 ms — gives ~40 reads in CRISPR phase
 
     // ── Clock and reset ────────────────────────────────────────────────
     logic clk;
@@ -117,7 +117,7 @@ module tb_lab_on_chip;
 
     // ── Stimulus memory ────────────────────────────────────────────────
     // Optical ADC stimulus loaded from Python-generated hex file
-    localparam MAX_SAMPLES = 2048;
+    localparam MAX_SAMPLES = 90000;
     logic [DATA_WIDTH-1:0] optical_stim [0:MAX_SAMPLES-1];
     logic [DATA_WIDTH-1:0] temp_stim    [0:MAX_SAMPLES-1];
 
@@ -146,7 +146,13 @@ module tb_lab_on_chip;
 
     // ── ADC response model ─────────────────────────────────────────────
     // When the DUT requests an ADC conversion (optical_adc_start),
-    // we respond with the next stimulus sample after a small delay.
+    // we respond based on LED state:
+    //   LED ON  → DARK_OFFSET - stimulus[idx]  (fluorescence, inverted TIA)
+    //   LED OFF → DARK_OFFSET                  (ambient baseline)
+    // So optical_acquisition computes: v_off - v_on = stimulus[idx]
+    localparam [DATA_WIDTH-1:0] DARK_OFFSET = 12'd2000;  // mid-rail ambient baseline
+    localparam STRIDE = 2250; // 90000 samples / 40 reads = 2250
+
     always @(posedge clk) begin
         if (!rst_n) begin
             optical_adc_valid <= 1'b0;
@@ -156,12 +162,18 @@ module tb_lab_on_chip;
             optical_adc_valid <= 1'b0;
 
             if (optical_adc_start) begin
-                // Deliver sample on next clock
-                optical_adc_data  <= optical_stim[optical_idx % MAX_SAMPLES];
-                optical_adc_valid <= 1'b1;
-
-                if (optical_idx < MAX_SAMPLES - 1)
-                    optical_idx <= optical_idx + 1;
+                if (led_en) begin
+                    // LED is ON: return dark offset MINUS fluorescence (inverting TIA)
+                    optical_adc_data  <= DARK_OFFSET - optical_stim[optical_idx % MAX_SAMPLES];
+                    optical_adc_valid <= 1'b1;
+                    // Advance index by STRIDE to cover the whole 15 min assay in 40 reads
+                    if (optical_idx + STRIDE < MAX_SAMPLES)
+                        optical_idx <= optical_idx + STRIDE;
+                end else begin
+                    // LED is OFF: return just dark offset (ambient)
+                    optical_adc_data  <= DARK_OFFSET;
+                    optical_adc_valid <= 1'b1;
+                end
             end
         end
     end
@@ -292,14 +304,15 @@ module tb_lab_on_chip;
                 wait (result_ready);
                 $display("============================================================");
                 $display("[%0t] RESULT: %s", $time, decode_result(result_code));
+                $display("  Peak Fluor: %0d", dut.u_decision.peak_fluor);
                 $display("  Baseline locked: %0b", baseline_locked);
                 $display("  Temperature valid: %0b", temp_valid);
                 $display("  Fault: %0b", fault);
                 $display("============================================================");
             end
             begin
-                // Timeout (2 seconds — enough for full assay at sim clock)
-                #2_000_000_000;
+                // Timeout (5 seconds — enough for full assay at sim clock)
+                #5_000_000_000;
                 $display("[%0t] TIMEOUT — simulation ended", $time);
             end
         join_any
