@@ -1,0 +1,10 @@
+read_verilog -sv ../rtl/baseline_estimator.sv
+read_verilog -sv ../rtl/decision_engine.sv
+read_verilog -sv ../rtl/digital_filter.sv
+read_verilog -sv ../rtl/optical_acquisition.sv
+read_verilog -sv ../rtl/reaction_fsm.sv
+read_verilog -sv ../rtl/thermal_controller.sv
+read_verilog -sv ../rtl/lab_on_chip_top.sv
+
+synth_ice40 -top lab_on_chip_top -json synth_ice40.json
+write_verilog synth_ice40.v
